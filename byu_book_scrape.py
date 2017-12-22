@@ -7,6 +7,7 @@ from selenium.webdriver.support.select import Select
 import time
 import numpy
 import re
+import json
 
 
 delay = 10
@@ -26,6 +27,7 @@ password.send_keys("byu12345")
 browser.find_element_by_xpath('//input[@class="submit"]').click()
 time.sleep(delay)
 browser.get("https://booklist.byu.edu/Home/ByCourse")
+time.sleep(2)
 
 # --------------------------------------------------------------
 def process_page():
@@ -33,36 +35,60 @@ def process_page():
 	books = []
 	for d in divs:
 		BOOK = {}
-		prof,title,isbn = d.split('\n')[:3]
-		BOOK.prof = prof
-		BOOK.title= title
-		BOOK.isbn = isbn
+		prof,title,isbn = d.text.split('\n')[:3]
+		BOOK['prof'] = prof
+		BOOK['title'] = title
+		BOOK['isbn'] = isbn
 		
 		byu_prices = d.find_element_by_xpath('//div[contains(@data-bind,"foreach: variants")]').text
-		byu_new = re.search(r'New Price: ([0-9.]+)', prices.text)
-		byu_used = re.search(r'Used Price: ([0-9.]+)', prices.text)
+		byu_new = re.search(r'New Price: ([$0-9.]+)', byu_prices)
+		byu_used = re.search(r'Used Price: ([$0-9.]+)', byu_prices)
 		if byu_new:
-			BOOK.byu_new = byu_new.groups()
+			BOOK['byu_new'] = byu_new.groups()
 		if byu_used:
-			BOOK.byu_used = byu_used.groups()
+			BOOK['byu_used'] = byu_used.groups()
 		
 		amazon = d.find_element_by_xpath('.//tbody[contains(@data-bind,"foreach: sources")]')
 		if amazon.text:
-			amazon
+			options = amazon.find_elements_by_xpath('.//option')
+			for o in options:
+				o.click()
+				time.sleep(1)
+				price = amazon.find_elements_by_xpath('.//span[contains(@data-bind,"text: price")]')
+				if o.text == 'New':
+					BOOK['amazon_new'] = price.text
+				elif o.text == 'Used':
+					BOOK['amazon_used'] = price.text
+		books.append(BOOK)
+	return books
 
 # ---------------------------------------------------------------
 
 department_selector = browser.find_elements_by_xpath('//select')[1]
 departments = department_selector.find_elements_by_xpath('.//option')
+
+out_file = 'scrape.json'
+results = {}
+print 'Starting departments'
 for dept in departments[1:]:
 	dept.click()
-	classes = dept.find_elements_by_xpath('.//select')
+	classes = dept.find_elements_by_xpath('//select')[-1]
+	classes = classes.find_elements_by_xpath('.//option')
+	class_dict = {}
+	print dept.text
 	for cls in classes[1:]:
+		print '  {}'.format(cls.text)
 		cls.click()
+		time.sleep(4)
 		browser.find_element_by_xpath("//input[@type='text']").click()
+		time.sleep(1)
 		browser.find_element_by_xpath("//input[@type='checkbox']").click()
-		process_page()
-
+		time.sleep(3)
+		books = process_page()
+		class_dict[cls.text] = books
+	results[dept.text] = class_dict
+	json.dump(results, open(out_file, 'w'))
+	time.sleep(5)
 
 
 
